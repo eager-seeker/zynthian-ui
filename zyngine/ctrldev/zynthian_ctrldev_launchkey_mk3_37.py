@@ -57,7 +57,7 @@ class zynthian_ctrldev_launchkey_mk3_37(zynthian_ctrldev_zynpad, zynthian_ctrlde
 
     @classmethod
     def is_device(cls, dev_name):
-        # This checks if the port being probed is your Launchkey DAW port
+        # This checks if the port being probed is the Launchkey DAW port
         return "Launchkey" in dev_name and ("DAW" in dev_name or "IN 2" in dev_name)
     
     def __init__(self, state_manager, idev_in, idev_out=None):
@@ -71,30 +71,33 @@ class zynthian_ctrldev_launchkey_mk3_37(zynthian_ctrldev_zynpad, zynthian_ctrlde
 
     def send_sysex(self, hex_string):
         if self.idev_out is not None:
-            # Convert the hex string to a list of integers, then join them
-            data_bytes = list(bytes.fromhex(hex_string))
-            msg = self.sys_ex_header + data_bytes + [0xF7]
+            # 1. Create the list of integers
+            msg_list = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0F] + list(bytes.fromhex(hex_string)) + [0xF7]
             
-            # Now msg is a clean list of integers: [240, 0, 32, 41, 2, 15, ...]
-            lib_zyncore.dev_send_midi_event(self.idev_out, msg, len(msg))
-            sleep(0.05)
+            # 2. Cast to bytes for system compatibility
+            msg_bytes = bytes(msg_list)
+            
+            try:
+                lib_zyncore.dev_send_midi_event(self.idev_out, msg_bytes, len(msg_bytes))
+            except Exception as e:
+                logging.error(f"send_midi_event (bytes) failed: {e}")
 
     def init(self):
-        logging.info("Initializing Launchkey MK3 37 Native Driver...")
+        super().init()
         
-        # 1. DAW Mode handshake (matching MK4 hex-string style)
-        self.send_sysex("100101")
+        # Check the port again after super().init()
         
-        # 2. Set Pad Layout to Session (hex: 0F 00)
-        self.send_sysex("0F00")
-        
-        # 3. Enable DAW mode via Note On
-        # Ensure these are raw integers. 15 = Ch 16, 12 = Note 12
-        lib_zyncore.dev_send_note_on(self.idev_out, 15, 12, 127)
-        
+        if self.idev_out is not None:
+            self.send_sysex("100101")
+            
+            # Check the Note On parameters
+            try:
+                lib_zyncore.dev_send_note_on(self.idev_out, 15, 12, 127)
+            except Exception as e:
+                logging.error(f"dev_send_note_on failed: {e}")
+
         self.cols = 8
         self.rows = 2
-        super().init()
 
     def end(self):
         super().end()
