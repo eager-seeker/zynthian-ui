@@ -38,34 +38,60 @@ from zynlibs.zynseq import zynseq
 # Novation Launchkey MK4 37
 # ------------------------------------------------------------------------------------------------------------------
 
-class zynthian_ctrldev_launchkey_mk4_37(zynthian_ctrldev_zynpad, zynthian_ctrldev_zynmixer):
+class zynthian_ctrldev_launchkey_mk3_37(zynthian_ctrldev_zynpad, zynthian_ctrldev_zynmixer):
 
-    dev_ids = ["Launchkey MK3 37 DAW In", "Launchkey MK3 37 IN 2"]
+    # Cover multiple bases: standard Zynthian naming and ALSA string
+    dev_ids = [
+        "Launchkey MK3 37 IN 2", 
+        "Launchkey MK3 37 LKMK3 DAW In",
+        "Launchkey MK3 37 DAW"
+    ]
+    
+    driver_id = "launchkey_mk3_37_native"
     driver_name = "Launchkey MK3 37"
-    driver_description = "Interface Novation Launchkey Mk3 with zynpad"
+    driver_description = "Native Novation Launchkey MK3 37-key Driver"
 
     PAD_COLOURS = [71, 104, 76, 51, 104, 41, 64, 12, 11, 71, 4, 67, 42, 9, 105, 15]
     STARTING_COLOUR = 123
     STOPPING_COLOUR = 120
+
+    @classmethod
+    def is_device(cls, dev_name):
+        # This checks if the port being probed is your Launchkey DAW port
+        return "Launchkey" in dev_name and ("DAW" in dev_name or "IN 2" in dev_name)
     
-    # Function to initialise class
     def __init__(self, state_manager, idev_in, idev_out=None):
         self.shift = False
         self.mode_cc51 = False
         self.mode_cc52 = False
         self.press_times = {}
         super().__init__(state_manager, idev_in, idev_out)
-        self.sys_ex_header = (0xF0, 0x00, 0x20, 0x29, 0x02, 0x14)
+        # Use a LIST for the header
+        self.sys_ex_header = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0F]
 
-    def send_sysex(self, data):
+    def send_sysex(self, hex_string):
         if self.idev_out is not None:
-            msg = self.sys_ex_header + bytes.fromhex(data) + (0xF7,)
+            # Convert the hex string to a list of integers, then join them
+            data_bytes = list(bytes.fromhex(hex_string))
+            msg = self.sys_ex_header + data_bytes + [0xF7]
+            
+            # Now msg is a clean list of integers: [240, 0, 32, 41, 2, 15, ...]
             lib_zyncore.dev_send_midi_event(self.idev_out, msg, len(msg))
             sleep(0.05)
 
     def init(self):
-        # Enable DAW mode on launchkey
+        logging.info("Initializing Launchkey MK3 37 Native Driver...")
+        
+        # 1. DAW Mode handshake (matching MK4 hex-string style)
+        self.send_sysex("100101")
+        
+        # 2. Set Pad Layout to Session (hex: 0F 00)
+        self.send_sysex("0F00")
+        
+        # 3. Enable DAW mode via Note On
+        # Ensure these are raw integers. 15 = Ch 16, 12 = Note 12
         lib_zyncore.dev_send_note_on(self.idev_out, 15, 12, 127)
+        
         self.cols = 8
         self.rows = 2
         super().init()
